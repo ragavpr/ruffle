@@ -966,6 +966,19 @@ pub fn load_root_movie<'gc>(
             })?;
         on_metadata(movie.header());
         movie.append_parameters(parameters);
+
+        let orig_fps: f64 = movie.frame_rate().into();
+        let unlock_fps = player.lock().unwrap().unlock_fps();
+        if let Some(target_fps) = unlock_fps {
+            let eff_target_fps = target_fps.max(orig_fps);
+            let dt = orig_fps / eff_target_fps;
+            movie.append_parameters(vec![
+                ("_ruffle_dt".to_string(), dt.to_string()),
+                ("dt".to_string(), dt.to_string()),
+            ]);
+            player.lock().unwrap().reset_timeline_accumulator(orig_fps);
+        }
+
         player.lock().unwrap().mutate_with_update_context(|uc| {
             uc.set_root_movie(movie);
         });

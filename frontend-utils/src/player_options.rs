@@ -29,6 +29,7 @@ pub struct PlayerOptions {
     pub player_version: Option<u8>,
     pub player_runtime: Option<PlayerRuntime>,
     pub frame_rate: Option<f64>,
+    pub unlock_fps: Option<f64>,
     pub dummy_external_interface: Option<bool>,
 }
 
@@ -54,6 +55,7 @@ impl PlayerOptions {
             player_version: self.player_version.or(other.player_version),
             player_runtime: self.player_runtime.or(other.player_runtime),
             frame_rate: self.frame_rate.or(other.frame_rate),
+            unlock_fps: self.unlock_fps.or(other.unlock_fps),
             dummy_external_interface: self
                 .dummy_external_interface
                 .or(other.dummy_external_interface),

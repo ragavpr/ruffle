@@ -203,6 +203,18 @@ impl<'a> PlayerOptionsWriter<'a> {
         })
     }
 
+    pub fn set_unlock_fps(&mut self, unlock_fps: Option<f64>) {
+        self.0.edit(|options, toml_document| {
+            if let Some(unlock_fps) = unlock_fps {
+                toml_document["unlock_fps"] = value(unlock_fps);
+            } else {
+                toml_document.remove("unlock_fps");
+            }
+
+            options.unlock_fps = unlock_fps;
+        })
+    }
+
     pub fn set_dummy_external_interface(&mut self, dummy_external_interface: Option<bool>) {
         self.0.edit(|options, toml_document| {
             if let Some(dummy_external_interface) = dummy_external_interface {
@@ -236,6 +248,7 @@ pub fn write_player_options(writer: &mut PlayerOptionsWriter, options: &PlayerOp
     writer.set_player_version(options.player_version);
     writer.set_player_runtime(options.player_runtime);
     writer.set_frame_rate(options.frame_rate);
+    writer.set_unlock_fps(options.unlock_fps);
     writer.set_dummy_external_interface(options.dummy_external_interface);
 }
 
@@ -642,6 +655,24 @@ mod tests {
         test(
             "frame_rate = \"unknown\"\n",
             |writer| writer.set_frame_rate(None),
+            "",
+        );
+    }
+
+    #[test]
+    fn unlock_fps() {
+        test(
+            "",
+            |writer| writer.set_unlock_fps(Some(120.0)),
+            "unlock_fps = 120.0\n",
+        );
+    }
+
+    #[test]
+    fn unlock_fps_remove() {
+        test(
+            "unlock_fps = \"unknown\"\n",
+            |writer| writer.set_unlock_fps(None),
             "",
         );
     }

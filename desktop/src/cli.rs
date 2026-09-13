@@ -191,6 +191,11 @@ pub struct Opt {
     #[clap(long)]
     pub frame_rate: Option<f64>,
 
+    /// Unlock frame rate for game logic and rendering to the specified target FPS
+    /// while keeping timeline animations at original speed.
+    #[clap(long, value_name = "FPS")]
+    pub unlock_fps: Option<f64>,
+
     /// The handling mode of links opening a new website.
     #[clap(long)]
     pub open_url_mode: Option<OpenUrlMode>,

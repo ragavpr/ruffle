@@ -88,14 +88,18 @@ pub fn run_all_phases_avm2(context: &mut UpdateContext<'_>) {
         orphan.construct_frame(context);
     });
     stage.construct_frame(context);
-    broadcast_frame_constructed(context);
+    if context.is_timeline_step {
+        broadcast_frame_constructed(context);
+    }
 
-    *context.frame_phase = FramePhase::FrameScripts;
-    OrphanManager::each_orphan_obj(context, |orphan, context| {
-        orphan.run_frame_scripts(context);
-    });
-    stage.run_frame_scripts(context);
-    run_frame_script_cleanup(context);
+    if context.is_timeline_step {
+        *context.frame_phase = FramePhase::FrameScripts;
+        OrphanManager::each_orphan_obj(context, |orphan, context| {
+            orphan.run_frame_scripts(context);
+        });
+        stage.run_frame_scripts(context);
+        run_frame_script_cleanup(context);
+    }
 
     *context.frame_phase = FramePhase::Exit;
     broadcast_frame_exited(context);

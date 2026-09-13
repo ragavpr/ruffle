@@ -207,6 +207,15 @@ pub struct UpdateContext<'gc> {
     /// Whether movies are prevented from changing the stage frame rate.
     pub forced_frame_rate: bool,
 
+    /// Unlocked frame rate target, if specified.
+    pub unlock_fps: Option<f64>,
+
+    /// Original frame rate from the root movie header.
+    pub original_frame_rate: &'gc mut f64,
+
+    /// Whether this frame is an original timeline step (ticks animations & timeline tags).
+    pub is_timeline_step: bool,
+
     /// Amount of actions performed since the last timeout check
     pub actions_since_timeout_check: &'gc mut u32,
 
@@ -357,8 +366,14 @@ impl<'gc> UpdateContext<'gc> {
     /// of previous stage contents. If you need to load a new root movie, you
     /// should use `replace_root_movie`.
     pub fn set_root_movie(&mut self, movie: SwfMovie) {
-        if !self.forced_frame_rate {
-            *self.frame_rate = movie.frame_rate().into();
+        let orig_fps: f64 = movie.frame_rate().into();
+        *self.original_frame_rate = orig_fps;
+
+        if let Some(target_fps) = self.unlock_fps {
+            *self.frame_rate = target_fps.max(orig_fps);
+            self.forced_frame_rate = true;
+        } else if !self.forced_frame_rate {
+            *self.frame_rate = orig_fps;
         }
 
         info!(
@@ -436,6 +451,24 @@ impl<'gc> UpdateContext<'gc> {
                 AvmString::new_utf8(self.gc(), version_string).into(),
                 Attribute::empty(),
             );
+
+            if let Some(target_fps) = self.unlock_fps {
+                let orig_fps = *self.original_frame_rate;
+                let target_fps = target_fps.max(orig_fps);
+                let dt = orig_fps / target_fps;
+                flashvars.define_value(
+                    self.gc(),
+                    AvmString::new_ascii_static(self.gc(), b"_ruffle_dt"),
+                    Avm1Value::Number(dt),
+                    Attribute::empty(),
+                );
+                flashvars.define_value(
+                    self.gc(),
+                    AvmString::new_ascii_static(self.gc(), b"dt"),
+                    Avm1Value::Number(dt),
+                    Attribute::empty(),
+                );
+            }
         }
 
         self.stage.replace_at_depth(self, root, 0);

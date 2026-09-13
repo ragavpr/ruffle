@@ -351,6 +351,10 @@ pub struct Player {
 
     frame_rate: f64,
     forced_frame_rate: bool,
+    unlock_fps: Option<f64>,
+    original_frame_rate: f64,
+    timeline_accumulator: FloatDuration,
+    is_timeline_step: bool,
     actions_since_timeout_check: u32,
 
     frame_phase: FramePhase,
@@ -2064,6 +2068,33 @@ impl Player {
             return;
         }
 
+        if let Some(target_fps) = self.unlock_fps {
+            let orig_fps = self.original_frame_rate;
+            let orig_frame_duration = if orig_fps > 0.0 {
+                FloatDuration::from_millis(1000.0 / orig_fps)
+            } else {
+                FloatDuration::from_millis(1000.0 / 12.0)
+            };
+            let target_frame_duration = if target_fps > 0.0 {
+                FloatDuration::from_millis(1000.0 / target_fps)
+            } else {
+                orig_frame_duration
+            };
+
+            self.timeline_accumulator += target_frame_duration;
+            if self.timeline_accumulator >= orig_frame_duration {
+                self.timeline_accumulator -= orig_frame_duration;
+                if self.timeline_accumulator >= orig_frame_duration {
+                    self.timeline_accumulator = FloatDuration::ZERO;
+                }
+                self.is_timeline_step = true;
+            } else {
+                self.is_timeline_step = false;
+            }
+        } else {
+            self.is_timeline_step = true;
+        }
+
         self.update(|context| {
             // TODO: Is this order correct?
             run_all_phases_avm2(context);
@@ -2165,6 +2196,24 @@ impl Player {
     // The frame rate of the current movie in FPS.
     pub fn frame_rate(&self) -> f64 {
         self.frame_rate
+    }
+
+    pub fn unlock_fps(&self) -> Option<f64> {
+        self.unlock_fps
+    }
+
+    pub fn original_frame_rate(&self) -> f64 {
+        self.original_frame_rate
+    }
+
+    pub fn is_timeline_step(&self) -> bool {
+        self.is_timeline_step
+    }
+
+    pub fn reset_timeline_accumulator(&mut self, orig_fps: f64) {
+        self.original_frame_rate = orig_fps;
+        self.timeline_accumulator = FloatDuration::ZERO;
+        self.is_timeline_step = false;
     }
 
     pub fn renderer(&self) -> &dyn RenderBackend {
@@ -2357,6 +2406,9 @@ impl Player {
                 audio_manager,
                 frame_rate: &mut this.frame_rate,
                 forced_frame_rate: this.forced_frame_rate,
+                unlock_fps: this.unlock_fps,
+                original_frame_rate: &mut this.original_frame_rate,
+                is_timeline_step: this.is_timeline_step,
                 actions_since_timeout_check: &mut this.actions_since_timeout_check,
                 frame_phase: &mut this.frame_phase,
                 stub_tracker: &mut this.stub_tracker,
@@ -2655,6 +2707,7 @@ pub struct PlayerBuilder {
     quality: StageQuality,
     page_url: Option<String>,
     frame_rate: Option<f64>,
+    unlock_fps: Option<f64>,
     external_interface_provider: Option<Box<dyn ExternalInterfaceProvider>>,
     fs_command_provider: Box<dyn FsCommandProvider>,
     #[cfg(feature = "known_stubs")]
@@ -2712,6 +2765,7 @@ impl PlayerBuilder {
             quality: StageQuality::High,
             page_url: None,
             frame_rate: None,
+            unlock_fps: None,
             external_interface_provider: None,
             fs_command_provider: Box::new(NullFsCommandProvider),
             #[cfg(feature = "known_stubs")]
@@ -2917,6 +2971,12 @@ impl PlayerBuilder {
         self
     }
 
+    /// Unlocks the player's frame rate for game logic and rendering while keeping timeline animations at original speed.
+    pub fn with_unlock_fps(mut self, unlock_fps: Option<f64>) -> Self {
+        self.unlock_fps = unlock_fps;
+        self
+    }
+
     /// Adds an External Interface provider for movies to communicate with
     pub fn with_external_interface(mut self, provider: Box<dyn ExternalInterfaceProvider>) -> Self {
         self.external_interface_provider = Some(provider);
@@ -3056,8 +3116,11 @@ impl PlayerBuilder {
 
         // Instantiate the player.
         let fake_movie = Arc::new(SwfMovie::empty(player_version, None));
-        let frame_rate = self.frame_rate.unwrap_or(12.0);
-        let forced_frame_rate = self.frame_rate.is_some();
+        let (frame_rate, forced_frame_rate) = match (self.unlock_fps, self.frame_rate) {
+            (Some(unlock_fps), _) => (unlock_fps, true),
+            (None, Some(frame_rate)) => (frame_rate, true),
+            (None, None) => (12.0, false),
+        };
         let player = Arc::new_cyclic(|self_ref| {
             Mutex::new(Player {
                 // Backends
@@ -3077,6 +3140,10 @@ impl PlayerBuilder {
                 // Timing
                 frame_rate,
                 forced_frame_rate,
+                unlock_fps: self.unlock_fps,
+                original_frame_rate: frame_rate,
+                timeline_accumulator: FloatDuration::ZERO,
+                is_timeline_step: true,
                 frame_phase: Default::default(),
                 frame_accumulator: FloatDuration::ZERO,
                 recent_run_frame_timings: VecDeque::with_capacity(10),
@@ -3314,4 +3381,52 @@ pub enum PlayerMode {
 
     /// Represents the debug version of Flash Player, i.e. flashplayerdebugger.
     Debug,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_player_builder_unlock_fps() {
+        let player = PlayerBuilder::new()
+            .with_unlock_fps(Some(120.0))
+            .build();
+        let p = player.lock().unwrap();
+        assert_eq!(p.unlock_fps(), Some(120.0));
+        assert_eq!(p.frame_rate(), 120.0);
+        assert!(p.forced_frame_rate);
+    }
+
+    #[test]
+    fn test_timeline_accumulator_pacing() {
+        let orig_fps = 30.0;
+        let target_fps = 120.0;
+        let player = PlayerBuilder::new()
+            .with_unlock_fps(Some(target_fps))
+            .build();
+        let mut p = player.lock().unwrap();
+        p.reset_timeline_accumulator(orig_fps);
+        assert!(!p.is_timeline_step());
+
+        // Simulate 120 ticks (1 second).
+        let mut timeline_steps = 0;
+        for _ in 0..120 {
+            let orig_frame_duration = FloatDuration::from_millis(1000.0 / orig_fps);
+            let target_frame_duration = FloatDuration::from_millis(1000.0 / target_fps);
+            p.timeline_accumulator += target_frame_duration;
+            if p.timeline_accumulator >= orig_frame_duration {
+                p.timeline_accumulator -= orig_frame_duration;
+                if p.timeline_accumulator >= orig_frame_duration {
+                    p.timeline_accumulator = FloatDuration::ZERO;
+                }
+                p.is_timeline_step = true;
+                timeline_steps += 1;
+            } else {
+                p.is_timeline_step = false;
+            }
+        }
+        // Over 120 ticks at 4:1 ratio, exactly 30 timeline steps should occur!
+        assert_eq!(timeline_steps, 30);
+    }
 }

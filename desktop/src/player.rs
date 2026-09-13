@@ -55,6 +55,12 @@ pub struct LaunchOptions {
 
 impl From<&GlobalPreferences> for LaunchOptions {
     fn from(value: &GlobalPreferences) -> Self {
+        if let Some(fps) = value.cli.unlock_fps {
+            if fps <= 0.0 || fps.is_nan() {
+                panic!("Invalid --unlock-fps: value must be positive, got {fps}");
+            }
+        }
+        let frame_rate = value.cli.unlock_fps.or(value.cli.frame_rate);
         Self {
             player: PlayerOptions {
                 parameters: value.cli.parameters().collect(),
@@ -85,7 +91,8 @@ impl From<&GlobalPreferences> for LaunchOptions {
                 cookie: value.cli.cookie.clone(),
                 player_version: value.cli.player_version,
                 player_runtime: value.cli.player_runtime,
-                frame_rate: value.cli.frame_rate,
+                frame_rate,
+                unlock_fps: value.cli.unlock_fps,
                 dummy_external_interface: if value.cli.dummy_external_interface {
                     Some(true)
                 } else {
@@ -336,6 +343,7 @@ impl ActivePlayer {
             .with_player_version(opt.player.player_version)
             .with_player_runtime(opt.player.player_runtime.unwrap_or_default())
             .with_frame_rate(opt.player.frame_rate)
+            .with_unlock_fps(opt.player.unlock_fps)
             .with_avm2_optimizer_enabled(opt.avm2_optimizer_enabled);
         let player = builder.build();
 

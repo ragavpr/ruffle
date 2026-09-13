@@ -66,6 +66,9 @@ pub fn read_player_options<'a>(
     // Frame rate
     result.frame_rate = table.get_float_like(cx, "frame_rate");
 
+    // Unlock frame rate
+    result.unlock_fps = table.get_float_like(cx, "unlock_fps");
+
     // Mock external interface
     result.dummy_external_interface = table.get_bool(cx, "mock_external_interface");
 
@@ -706,6 +709,19 @@ mod tests {
         assert_eq!(
             &PlayerOptions {
                 frame_rate: Some(5.0),
+                ..Default::default()
+            },
+            result.values()
+        );
+        assert_eq!(Vec::<ParseWarning>::new(), result.warnings);
+    }
+
+    #[test]
+    fn unlock_fps() {
+        let result = read("unlock_fps = 120");
+        assert_eq!(
+            &PlayerOptions {
+                unlock_fps: Some(120.0),
                 ..Default::default()
             },
             result.values()

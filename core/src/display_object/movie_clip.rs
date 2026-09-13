@@ -464,7 +464,7 @@ impl<'gc> MovieClip<'gc> {
 
             // Run my SWF tags.
             // In AVM2, SWF tags are processed at enterFrame time.
-            if self.playing() {
+            if context.is_timeline_step && self.playing() {
                 self.run_frame_internal(context, true, true, false);
             }
         }
@@ -2553,27 +2553,29 @@ impl<'gc> TDisplayObject<'gc> for MovieClip<'gc> {
         }
 
         if self.movie().is_action_script_3() {
-            let is_playing = self.playing();
+            if context.is_timeline_step {
+                let is_playing = self.playing();
 
-            if is_playing {
-                self.run_frame_internal(context, true, true, true);
-            }
+                if is_playing {
+                    self.run_frame_internal(context, true, true, true);
+                }
 
-            // PlaceObject tags execute at this time.
-            // Note that this is NOT when constructors run; that happens later
-            // after tags have executed.
-            let data = self.0.shared.get().swf.clone();
-            let place_actions = self.unqueue_filtered(|q| q.unqueue_add());
+                // PlaceObject tags execute at this time.
+                // Note that this is NOT when constructors run; that happens later
+                // after tags have executed.
+                let data = self.0.shared.get().swf.clone();
+                let place_actions = self.unqueue_filtered(|q| q.unqueue_add());
 
-            for (_, tag) in place_actions {
-                let mut reader = data.read_from(tag.tag_start);
-                let version = match tag.tag_type {
-                    QueuedTagAction::Place(v) => v,
-                    _ => unreachable!(),
-                };
+                for (_, tag) in place_actions {
+                    let mut reader = data.read_from(tag.tag_start);
+                    let version = match tag.tag_type {
+                        QueuedTagAction::Place(v) => v,
+                        _ => unreachable!(),
+                    };
 
-                if let Err(e) = self.place_object(context, &mut reader, version) {
-                    tracing::error!("Error running queued tag: {:?}, got {}", tag.tag_type, e);
+                    if let Err(e) = self.place_object(context, &mut reader, version) {
+                        tracing::error!("Error running queued tag: {:?}, got {}", tag.tag_type, e);
+                    }
                 }
             }
         }
