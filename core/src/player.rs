@@ -2212,8 +2212,26 @@ impl Player {
 
     pub fn reset_timeline_accumulator(&mut self, orig_fps: f64) {
         self.original_frame_rate = orig_fps;
-        self.timeline_accumulator = FloatDuration::ZERO;
-        self.is_timeline_step = false;
+        let orig_frame_duration = if orig_fps > 0.0 {
+            FloatDuration::from_millis(1000.0 / orig_fps)
+        } else {
+            FloatDuration::from_millis(1000.0 / 12.0)
+        };
+        let target_frame_duration = if let Some(target_fps) = self.unlock_fps {
+            if target_fps > 0.0 {
+                FloatDuration::from_millis(1000.0 / target_fps)
+            } else {
+                orig_frame_duration
+            }
+        } else {
+            orig_frame_duration
+        };
+        self.timeline_accumulator = if orig_frame_duration >= target_frame_duration {
+            orig_frame_duration - target_frame_duration
+        } else {
+            FloatDuration::ZERO
+        };
+        self.is_timeline_step = true;
     }
 
     pub fn renderer(&self) -> &dyn RenderBackend {
@@ -3407,7 +3425,7 @@ mod tests {
             .build();
         let mut p = player.lock().unwrap();
         p.reset_timeline_accumulator(orig_fps);
-        assert!(!p.is_timeline_step());
+        assert!(p.is_timeline_step());
 
         // Simulate 120 ticks (1 second).
         let mut timeline_steps = 0;

@@ -138,14 +138,16 @@ impl ActivePlayer {
         let player_id = PlayerId::new();
         let mut builder = PlayerBuilder::new();
 
-        match CpalAudioBackend::new(preferences.output_device_name().as_deref()) {
-            Ok(audio) => {
-                builder = builder.with_audio(audio);
-            }
-            Err(e) => {
-                tracing::error!("Unable to create audio device: {}", e);
-            }
-        };
+        if !preferences.cli.no_audio {
+            match CpalAudioBackend::new(preferences.output_device_name().as_deref()) {
+                Ok(audio) => {
+                    builder = builder.with_audio(audio);
+                }
+                Err(e) => {
+                    tracing::error!("Unable to create audio device: {}", e);
+                }
+            };
+        }
 
         let mut content = PlayingContent::DirectFile(content_descriptor.clone());
         if content_descriptor.url.scheme() == "file"

@@ -119,6 +119,10 @@ pub struct Opt {
     #[clap(long, short)]
     pub volume: Option<f32>,
 
+    /// Disable audio output entirely (useful for deterministic recording / libTAS).
+    #[clap(long, action)]
+    pub no_audio: bool,
+
     /// Prevent movies from changing the stage scale mode.
     #[clap(long, action)]
     pub force_scale: bool,

@@ -2528,6 +2528,13 @@ impl<'gc> TDisplayObject<'gc> for MovieClip<'gc> {
     }
 
     fn enter_frame(self, context: &mut UpdateContext<'gc>) {
+        if !context.is_timeline_step {
+            for child in self.iter_render_list().rev() {
+                child.enter_frame(context);
+            }
+            return;
+        }
+
         let skip_frame = self.base().should_skip_next_enter_frame();
         //Child removals from looping gotos appear to resolve in reverse order.
         for child in self.iter_render_list().rev() {
@@ -2553,29 +2560,27 @@ impl<'gc> TDisplayObject<'gc> for MovieClip<'gc> {
         }
 
         if self.movie().is_action_script_3() {
-            if context.is_timeline_step {
-                let is_playing = self.playing();
+            let is_playing = self.playing();
 
-                if is_playing {
-                    self.run_frame_internal(context, true, true, true);
-                }
+            if is_playing {
+                self.run_frame_internal(context, true, true, true);
+            }
 
-                // PlaceObject tags execute at this time.
-                // Note that this is NOT when constructors run; that happens later
-                // after tags have executed.
-                let data = self.0.shared.get().swf.clone();
-                let place_actions = self.unqueue_filtered(|q| q.unqueue_add());
+            // PlaceObject tags execute at this time.
+            // Note that this is NOT when constructors run; that happens later
+            // after tags have executed.
+            let data = self.0.shared.get().swf.clone();
+            let place_actions = self.unqueue_filtered(|q| q.unqueue_add());
 
-                for (_, tag) in place_actions {
-                    let mut reader = data.read_from(tag.tag_start);
-                    let version = match tag.tag_type {
-                        QueuedTagAction::Place(v) => v,
-                        _ => unreachable!(),
-                    };
+            for (_, tag) in place_actions {
+                let mut reader = data.read_from(tag.tag_start);
+                let version = match tag.tag_type {
+                    QueuedTagAction::Place(v) => v,
+                    _ => unreachable!(),
+                };
 
-                    if let Err(e) = self.place_object(context, &mut reader, version) {
-                        tracing::error!("Error running queued tag: {:?}, got {}", tag.tag_type, e);
-                    }
+                if let Err(e) = self.place_object(context, &mut reader, version) {
+                    tracing::error!("Error running queued tag: {:?}, got {}", tag.tag_type, e);
                 }
             }
         }
@@ -2639,7 +2644,7 @@ impl<'gc> TDisplayObject<'gc> for MovieClip<'gc> {
             }
         }
 
-        if *context.frame_phase == FramePhase::Construct {
+        if context.is_timeline_step && *context.frame_phase == FramePhase::Construct {
             // Check for frame-scripts before starting the frame-script phase,
             // to differentiate the pre-existing scripts from those introduced during frame-script phase.
             self.check_has_pending_script();
